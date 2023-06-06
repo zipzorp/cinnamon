@@ -29,7 +29,10 @@ const THUMBNAIL_FADE_TIME = 0.1; // seconds
 const PREVIEW_DELAY_TIMEOUT = 0; // milliseconds
 var PREVIEW_SWITCHER_FADEOUT_TIME = 0.2; // seconds
 
-const iconSizes = [96, 64, 48];
+const iconMinSize = 32; // minimum size of the icons in icon-only alt+tab window selector
+
+const thumbnailMaxSize = 1000; // maximum size of thumbnail in the thumbnail-only alt+tab window selector
+const thumbnailMinSize = 64; // minimum size of thumbnail in the thumbnail-only alt+tab window selector
 
 function mod(a, b) {
     return (a + b) % b;
@@ -415,28 +418,27 @@ AppIcon.prototype = {
                                          vertical: true });
         this.icon = null;
         this._iconBin = new St.Bin();
+        this.label = new St.Label({text: " "});
+        let bin = new St.Bin({ x_align: St.Align.MIDDLE });
 
         this.actor.add(this._iconBin, { x_fill: false, y_fill: false } );
         let title = window.get_title();
         if (title) {
             if (window.minimized) {
-                this.label = new St.Label({ text: "[" + title + "]"});               
+                this.label.set_text("[" + title + "]");               
                 let contrast_effect = new Clutter.BrightnessContrastEffect();                
                 contrast_effect.set_brightness_full(-0.5, -0.5, -0.5);
                 this._iconBin.add_effect(contrast_effect);                
             }
             else {
-                this.label = new St.Label({ text: title });    
+                this.label.set_text(title); 
             }
-            
-            let bin = new St.Bin({ x_align: St.Align.MIDDLE });
-            bin.add_actor(this.label);
-            this.actor.add(bin);
         }
         else {
-            this.label = new St.Label({ text: this.app ? this.app.get_name() : window.title });
-            this.actor.add(this.label, { x_fill: false });
+            this.label.set_text(this.app ? this.app.get_name() : window.title );
         }
+        bin.add_actor(this.label, { x_fill: false });
+        this.actor.add(bin);
     },
 
     set_size: function(size) {
@@ -458,6 +460,10 @@ AppIcon.prototype = {
                               icon_type: St.IconType.FULLCOLOR,
                               icon_size: size });
         }
+        this.fontSize = Math.max(size / 16, 14);
+        this.fontSize = Math.min(this.fontSize, 32);
+        this.label.set_style("font-size: " + this.fontSize + "px;");
+        this.label.set_height(this.fontSize * 1.2 + this.bottomPadding);
         size *= global.ui_scale;
         this._iconBin.set_size(size, size);
         this._iconBin.child = this.icon;
@@ -780,6 +786,7 @@ AppList.prototype = {
         this._showArrows = showArrows;
         this._mouseTimeOutId = 0;
         this._activeMonitor = activeMonitor;
+        this._showThumbnails = showThumbnails;
     },
 
     _getPreferredHeight: function (actor, forWidth, alloc) {
@@ -803,19 +810,23 @@ AppList.prototype = {
         let availWidth = this._activeMonitor.width - parentPadding - this.actor.get_theme_node().get_horizontal_padding();
         let height = 0;
 
-        for(let i =  0; i < iconSizes.length; i++) {
-                this._iconSize = iconSizes[i];
-                height = (iconSizes[i] * global.ui_scale) + iconSpacing;
-                let w = height * this._items.length + totalSpacing;
-                if (w <= availWidth)
-                        break;
-        }
-        if (this._items.length == 1) {
-            this._iconSize = iconSizes[0];
-            height = (iconSizes[0] * global.ui_scale) + iconSpacing;
-        }
+        if (this._showThumbnails) {
+            if (this._items.length == 1) {
+                this._iconSize = thumbnailMaxSize;
+                height = thumbnailMaxSize;
+            } else {
+                this._iconSize = Math.min((availWidth / this._items.length) - iconSpacing, thumbnailMaxSize);
+                this._iconSize = Math.max(this._iconSize, thumbnailMinSize);
+                height = this._iconSize;
+            }
+        } else {
+                this._iconSize = Math.max(this._activeMonitor.width / 14, iconMinHeight);
+                height = this._iconSize;
+            }
+        height += iconSpacing;
+        this._iconSize /= global.ui_scale;
 
-        for(let i = 0; i < this.icons.length; i++) {
+        for (let i = 0; i < this.icons.length; i++) {
             if (this.icons[i].icon != null)
                 break;
             this.icons[i].set_size(this._iconSize);
